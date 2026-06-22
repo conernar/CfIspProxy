@@ -1,5 +1,5 @@
 """CfIspProxy 优选 IP 扫描核心（Python 标准库 only）。"""
-import ipaddress, random
+import asyncio, ipaddress, random, ssl, time
 from dataclasses import dataclass
 
 def load_cidrs(text):
@@ -59,3 +59,54 @@ def format_ip_list(results, now, top_n):
     for r in top:
         lines.append(f"{r.ip}#{r.colo or '??'}-{round(r.rtt_ms)}ms-{r.mbps:.1f}mbps")
     return "\n".join(lines) + "\n"
+
+def _tls_ctx():
+    return ssl.create_default_context()
+
+async def measure_latency(ip, sni, port=443, timeout=2.0):
+    start = time.perf_counter()
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host=ip, port=port, ssl=_tls_ctx(), server_hostname=sni), timeout)
+        rtt_ms = (time.perf_counter() - start) * 1000.0
+        colo = None
+        try:
+            writer.write(build_http_request(sni, "/cdn-cgi/trace"))
+            await writer.drain()
+            data = await asyncio.wait_for(reader.read(4096), timeout)
+            colo = parse_trace_colo(data.decode("latin1", "ignore"))
+        except Exception:
+            pass
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return Result(ip=ip, ok=True, rtt_ms=rtt_ms, colo=colo)
+    except Exception:
+        return Result(ip=ip, ok=False, rtt_ms=float("inf"))
+
+async def measure_speed(ip, sni, seconds=5.0, port=443, want_bytes=50_000_000):
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host=ip, port=port, ssl=_tls_ctx(), server_hostname=sni), 5.0)
+        writer.write(build_http_request(sni, f"/__down?bytes={want_bytes}"))
+        await writer.drain()
+        total, start = 0, time.perf_counter()
+        while time.perf_counter() - start < seconds:
+            try:
+                data = await asyncio.wait_for(reader.read(65536), seconds)
+            except asyncio.TimeoutError:
+                break
+            if not data:
+                break
+            total += len(data)
+        elapsed = time.perf_counter() - start
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return compute_mbps(total, elapsed)
+    except Exception:
+        return 0.0
