@@ -74,4 +74,38 @@ export function parseIpList(text) {
     .map(l => l.split("#")[0].trim()).filter(Boolean);
 }
 
+function splitAddr(entry) { const [addr, port = "443"] = entry.split(":"); return { addr, port }; }
+
+export function buildVlessLinks({ host, uuid, wsPath, ips }) {
+  const lines = ips.map((e, i) => {
+    const { addr, port } = splitAddr(e);
+    const q = new URLSearchParams({ encryption: "none", security: "tls", sni: host, type: "ws", host, path: wsPath });
+    return `vless://${uuid}@${addr}:${port}?${q}#${encodeURIComponent(`${host}-${i + 1}`)}`;
+  });
+  return btoa(lines.join("\n"));
+}
+
+export function buildSingboxConfig({ host, uuid, wsPath, ips }) {
+  const nodes = ips.map((e, i) => {
+    const { addr, port } = splitAddr(e);
+    return {
+      type: "vless", tag: `node-${i + 1}`, server: addr, server_port: Number(port), uuid,
+      tls: { enabled: true, server_name: host },
+      transport: { type: "ws", path: wsPath, headers: { Host: host } },
+    };
+  });
+  const tags = nodes.map(n => n.tag);
+  return {
+    log: { level: "warn" },
+    inbounds: [{ type: "mixed", tag: "in", listen: "127.0.0.1", listen_port: 2080 }],
+    outbounds: [
+      { type: "urltest", tag: "auto", outbounds: tags, url: "https://www.gstatic.com/generate_204", interval: "3m", tolerance: 50 },
+      ...nodes,
+      { type: "selector", tag: "proxy", outbounds: ["auto", ...tags] },
+      { type: "direct", tag: "direct" },
+    ],
+    route: { final: "proxy" },
+  };
+}
+
 export default { async fetch() { return new Response("ok"); } }; // 占位，Task 5/6 替换
