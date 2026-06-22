@@ -180,6 +180,10 @@ vless://<UUID>@<优选IP>:443?encryption=none&security=tls&sni=<域名>&type=ws&
 混淆器实现选择（实现期定夺）：优先**包装 npm `javascript-obfuscator`**（成熟），参数调到不破坏 Workers（保留 import、避免破坏 `self`/全局、控制流变形保持中等以控 CPU）；
 或自写轻量混淆。**混淆目的是"指纹唯一化以规避批量识别"，不是密码学保密。**
 
+> **落地（已实现，2026-06-22）**：选**纯 Python 标准库自写轻量混淆**（否决 npm `javascript-obfuscator`：会引入 Node 工具链依赖、产物臃肿、CF CPU 更重，且"重度混淆 JS 本身即特征"——与"指纹唯一非保密"的目标相悖，轻量"变化">"不透明"）。
+> 落地于 `tools/personalize/`（`inject.py` 注入 + `obfuscate.py` 混淆 + `main.py` 交互 CLI），与 Stage 1.5 同构的"薄壳 + 可注入纯核"。变换：去命名导出、**顶层符号白名单重命名（字符串先掩码以护住注入的用户密钥值）**、函数重排、伪装页 `String.fromCharCode` 编码、噪声注入、字符串感知去注释。
+> 交互式输入（`getpass` 隐藏密码，密钥项回车自动生成）；**仅产出 `dist/worker.<hex>.js`** + 终端打印密钥摘要（不另产 client 配置，订阅由 worker `/sub` 动态生成）。安全护栏 `verify()` 断言不变量，本机有 `node` 时额外跑 `node --check` 真实语法门。
+
 ## 9. 仓库结构
 
 ```
