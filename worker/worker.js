@@ -69,4 +69,9 @@ export function parseSocks5ConnectReply(b) {
   return { ok: true, consumed: 4 + addrLen + 2 };
 }
 
+export function parseIpList(text) {
+  return text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"))
+    .map(l => l.split("#")[0].trim()).filter(Boolean);
+}
+
 export default { async fetch() { return new Response("ok"); } }; // 占位，Task 5/6 替换
