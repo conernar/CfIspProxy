@@ -1,0 +1,14 @@
+{
+  "name": "cfispproxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^3.80.0"
+  }
+}
