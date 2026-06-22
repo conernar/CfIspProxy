@@ -45,3 +45,54 @@ def test_rename_deterministic():
 def test_denylist_has_externals():
     for name in ("connect", "fetch", "WebSocketPair", "Response", "URL", "Uint8Array"):
         assert name in DENYLIST
+
+
+import re as _re
+from obfuscate import (reorder_functions, encode_disguise, inject_noise,
+                       strip_comments, obfuscate, verify)
+from inject import Config, inject_config
+
+def test_reorder_preserves_functions():
+    src = "function a(){}\nfunction b(){}\nfunction c(){}\nexport default {};\n"
+    out = reorder_functions(src, random.Random(3))
+    assert sorted(_re.findall(r"function (\w)\(", out)) == ["a", "b", "c"]
+    assert out.rstrip().endswith("export default {};")   # 默认导出仍在末尾
+
+def test_encode_disguise_hides_literal():
+    src = 'const DISGUISE = `<h1>Welcome to nginx!</h1>`;\n'
+    out = encode_disguise(src, random.Random(4))
+    assert "Welcome to nginx" not in out          # 明文消失
+    assert "String.fromCharCode(" in out
+    codes = [int(x) for x in _re.findall(r"\d+", out.split("fromCharCode(")[1].split(")")[0])]
+    assert "".join(chr(c) for c in codes) == "<h1>Welcome to nginx!</h1>"  # 解码等价
+
+def test_inject_noise_adds_unused_const():
+    src = "const HEX = 1;\n"
+    out = inject_noise(src, random.Random(5))
+    assert out.count("const ") > src.count("const ")
+
+def test_strip_comments():
+    src = "// hi\nconst a=1; /* blk */\nconst b=2;\n"
+    out = strip_comments(src)
+    assert "hi" not in out and "blk" not in out and "const a=1;" in out
+
+DEV = open("worker/worker.js", encoding="utf-8").read()
+CFG = Config(isp_host="1.2.3.4", isp_port=8443, isp_user="u", isp_pass="p",
+             preferred_ips_url="https://raw.example/x.txt",
+             uuid="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", ws_path="/secret",
+             sub_token="tok123", fallback_ips=["104.16.0.1#fb"])
+
+def test_verify_passes_on_good_output():
+    out = obfuscate(inject_config(DEV, CFG), random.Random(11))
+    verify(out, CFG)        # 不抛异常即通过
+
+def test_verify_rejects_broken():
+    import pytest
+    with pytest.raises(Exception):
+        verify('const x = 1;', CFG)   # 缺 import/export default/注入值
+
+def test_obfuscate_deterministic_and_unique():
+    a = obfuscate(inject_config(DEV, CFG), random.Random(11))
+    b = obfuscate(inject_config(DEV, CFG), random.Random(11))
+    c = obfuscate(inject_config(DEV, CFG), random.Random(22))
+    assert a == b and a != c
