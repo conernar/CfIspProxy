@@ -1,6 +1,21 @@
 import { connect } from "cloudflare:sockets";
 
-// ===== ① CONFIG（DEV 占位；部署前替换 / Stage2 由 main.py 烤入）=====
+// ============================================================================
+// ① CONFIG —— 部署前必须替换以下全部占位值！（Stage2 的 main.py 会自动烤入）
+//   下面是可被测试断言的 DEV 占位值，直接粘贴到 CF 后无法工作，请逐项替换：
+//
+//   UUID              客户端鉴权用。生成：在终端跑 `crypto.randomUUID()` 或
+//                     在线 UUID 工具。客户端节点里的 uuid 必须与此一致。
+//   WS_PATH           WebSocket 路径，保密、必须以 "/" 开头（如 "/a8Fk2_tunnel"）。
+//   SUB_TOKEN         /sub 订阅口令，保密。取订阅时用 ?token=<SUB_TOKEN>。
+//   ISP.host/port     你购买的 ISP 代理（SOCKS5）地址与端口。
+//   ISP.user/pass     SOCKS5 账密（RFC1929）。注意：必须账密认证，不能用 IP 白名单
+//                     （CF Worker 出口 IP 不固定）。host 须为公网非 CF IP、非 25 端口。
+//   PREFERRED_IPS_URL 你自己仓库里 preferred-ips.txt 的 raw 地址（worker 墙外拉取，
+//                     即使该域名在国内被墙也无妨）。墙内优选脚本周更后 git push 即生效。
+//   FALLBACK_IPS      拉取失败时的内置兜底 IP（保证 /sub 永不空）。
+//   SUB_CACHE_TTL     /sub 拉取优选列表的缓存秒数（默认 1800，避免频繁打 GitHub）。
+// ============================================================================
 const CONFIG = {
   UUID: "12345678-90ab-cdef-1234-567890abcdef",
   WS_PATH: "/ws-REPLACE",
