@@ -36,3 +36,35 @@ def test_parse_colo():
 def test_mbps():
     assert compute_mbps(1_000_000, 1.0) == 8.0
     assert compute_mbps(100, 0) == 0.0
+
+
+from datetime import datetime
+from scanner import Result, rank, format_ip_list
+
+def _parse_iplist(text):  # 复刻 worker parseIpList 规则，验证输出可被消费
+    out = []
+    for l in text.splitlines():
+        l = l.strip()
+        if not l or l.startswith("#"):
+            continue
+        ip = l.split("#")[0].strip()
+        if ip:
+            out.append(ip)
+    return out
+
+def _sample_results():
+    return [
+        Result("1.1.1.1", True, 50.0, "LHR", 90.0),
+        Result("2.2.2.2", True, 30.0, "HKG", 90.0),   # 同速,延迟更低 → 排前
+        Result("3.3.3.3", True, 10.0, "NRT", 200.0),  # 速度最高 → 第一
+        Result("4.4.4.4", False, float("inf"), None, 0.0),  # 失败 → 剔除
+    ]
+
+def test_rank():
+    assert [r.ip for r in rank(_sample_results())] == ["3.3.3.3", "2.2.2.2", "1.1.1.1"]
+
+def test_format_and_parseable():
+    out = format_ip_list(rank(_sample_results()), datetime(2026, 6, 22, 9, 0, 0), top_n=2)
+    assert out.splitlines()[0].startswith("# ")               # 头部注释
+    assert _parse_iplist(out) == ["3.3.3.3", "2.2.2.2"]       # 取 top2 且可被 parseIpList 提取
+    assert "3.3.3.3#NRT-10ms-200.0mbps" in out
