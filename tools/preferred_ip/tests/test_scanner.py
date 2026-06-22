@@ -68,3 +68,30 @@ def test_format_and_parseable():
     assert out.splitlines()[0].startswith("# ")               # 头部注释
     assert _parse_iplist(out) == ["3.3.3.3", "2.2.2.2"]       # 取 top2 且可被 parseIpList 提取
     assert "3.3.3.3#NRT-10ms-200.0mbps" in out
+
+
+import asyncio, tempfile, os
+from unittest import mock
+import scan
+
+def test_pipeline_with_injected_measures():
+    async def fake_latency(ip, sni, port, timeout):
+        return Result(ip, True, rtt_ms=float(int(ip.split(".")[-1])), colo="HKG")
+    async def fake_speed(ip, sni, seconds, port):
+        return 100.0 - float(int(ip.split(".")[-1]))  # 末位越小越快
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "preferred-ips.txt")
+        args = scan.parse_args(["-n", "8", "--seed", "3", "-o", "3",
+                                "--top-latency", "5", "--out-file", out])
+        ranked = asyncio.run(scan.run_scan(args, fake_latency, fake_speed))
+        assert os.path.exists(out)
+        assert len(ranked) <= 5
+        body = [l for l in open(out, encoding="utf-8").read().splitlines() if not l.startswith("#")]
+        assert 1 <= len(body) <= 3  # 写出 top-3
+
+def test_git_push_noop_when_no_change():
+    with mock.patch("scan.subprocess.run") as m:
+        m.return_value = mock.Mock(stdout="", returncode=0)  # status --porcelain 空 = 无变更
+        assert scan.git_push("data/preferred-ips.txt", "/repo") is False
+        calls = " ".join(str(c) for c in m.call_args_list)
+        assert "commit" not in calls  # 未提交
