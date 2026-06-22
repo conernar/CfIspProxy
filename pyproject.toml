@@ -1,0 +1,13 @@
+[project]
+name = "cfispproxy-tools"
+version = "0.0.0"
+description = "CfIspProxy 墙内工具：优选 IP 扫描等"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["tools/preferred_ip"]
+testpaths = ["tools/preferred_ip/tests"]
