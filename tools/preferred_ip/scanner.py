@@ -23,3 +23,16 @@ def sample_ips(cidrs, k, rng):
             seen.add(ip)
             out.append(ip)
     return out
+
+def build_http_request(host, path):
+    return (f"GET {path} HTTP/1.1\r\nHost: {host}\r\n"
+            f"User-Agent: cfispproxy-scan\r\nConnection: close\r\n\r\n").encode()
+
+def parse_trace_colo(text):
+    for line in text.splitlines():
+        if line.startswith("colo="):
+            return line[5:].strip()
+    return None
+
+def compute_mbps(nbytes, seconds):
+    return (nbytes * 8) / seconds / 1e6 if seconds > 0 else 0.0
