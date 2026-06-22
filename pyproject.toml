@@ -9,5 +9,5 @@ dependencies = []
 dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
-pythonpath = ["tools/preferred_ip"]
-testpaths = ["tools/preferred_ip/tests"]
+pythonpath = ["tools/preferred_ip", "tools/personalize"]
+testpaths = ["tools/preferred_ip/tests", "tools/personalize/tests"]
