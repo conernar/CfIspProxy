@@ -204,4 +204,36 @@ async function handleProxy(request) {
   return new Response(null, { status: 101, webSocket: client });
 }
 
-export default { async fetch() { return new Response("ok"); } }; // 占位，Task 6 替换
+// ===== ④ 控制面 + 伪装页 =====
+const DISGUISE = `<!DOCTYPE html><html><head><title>Welcome to nginx!</title></head><body><h1>Welcome to nginx!</h1></body></html>`;
+function disguise() { return new Response(DISGUISE, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }); }
+
+export async function getPreferredIPs() {
+  try {
+    const r = await fetch(CONFIG.PREFERRED_IPS_URL, { cf: { cacheTtl: CONFIG.SUB_CACHE_TTL, cacheEverything: true } });
+    if (!r.ok) return CONFIG.FALLBACK_IPS;
+    const ips = parseIpList(await r.text());
+    return ips.length ? ips : CONFIG.FALLBACK_IPS;
+  } catch { return CONFIG.FALLBACK_IPS; }
+}
+
+async function handleSub(request) {
+  const url = new URL(request.url);
+  if (url.searchParams.get("token") !== CONFIG.SUB_TOKEN) return disguise();
+  const ips = await getPreferredIPs();
+  const args = { host: url.hostname, uuid: CONFIG.UUID, wsPath: CONFIG.WS_PATH, ips };
+  if (url.searchParams.get("format") === "links") {
+    return new Response(buildVlessLinks(args), { headers: { "content-type": "text/plain; charset=utf-8" } });
+  }
+  return new Response(JSON.stringify(buildSingboxConfig(args), null, 2), { headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+// ===== ② fetch 路由分发 =====
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.headers.get("Upgrade") === "websocket" && url.pathname === CONFIG.WS_PATH) return handleProxy(request);
+    if (request.method === "GET" && url.pathname === "/sub") return handleSub(request);
+    return disguise();
+  },
+};
