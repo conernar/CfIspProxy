@@ -108,4 +108,100 @@ export function buildSingboxConfig({ host, uuid, wsPath, ips }) {
   };
 }
 
-export default { async fetch() { return new Response("ok"); } }; // 占位，Task 5/6 替换
+// ===== ③ 数据面 =====
+function makeReadableWebSocketStream(ws, earlyHeader) {
+  let cancelled = false;
+  return new ReadableStream({
+    start(c) {
+      ws.addEventListener("message", e => { if (!cancelled) c.enqueue(e.data); });
+      ws.addEventListener("close", () => { if (!cancelled) { try { c.close(); } catch {} } });
+      ws.addEventListener("error", e => c.error(e));
+      if (earlyHeader) { // 0-RTT early data: base64url in sec-websocket-protocol
+        try {
+          const s = atob(earlyHeader.replace(/-/g, "+").replace(/_/g, "/"));
+          const u = Uint8Array.from(s, ch => ch.charCodeAt(0));
+          if (u.length) c.enqueue(u.buffer);
+        } catch {}
+      }
+    },
+    cancel() { cancelled = true; try { ws.close(); } catch {} },
+  });
+}
+
+// 缓冲读取：处理 SOCKS5 各步回复可能粘包/拆包
+function makeSocks5Reader(reader) {
+  let buf = new Uint8Array(0);
+  const pull = async () => {
+    const { value, done } = await reader.read();
+    if (done) return false;
+    const n = new Uint8Array(buf.length + value.byteLength);
+    n.set(buf); n.set(new Uint8Array(value), buf.length); buf = n;
+    return true;
+  };
+  return {
+    async readAtLeast(n) {
+      while (buf.length < n) { if (!await pull()) throw new Error("socks5: eof"); }
+      const out = buf.slice(0, n); buf = buf.slice(n); return out;
+    },
+    async readConnectReply() {
+      while (buf.length < 5) { if (!await pull()) throw new Error("socks5: eof"); }
+      const r = parseSocks5ConnectReply(buf);
+      if (!r.ok) return { ok: false };
+      while (buf.length < r.consumed) { if (!await pull()) throw new Error("socks5: eof"); }
+      buf = buf.slice(r.consumed); return { ok: true };
+    },
+    leftover() { return buf; },
+  };
+}
+
+async function handleProxy(request) {
+  const [client, server] = Object.values(new WebSocketPair());
+  server.accept();
+  const wsStream = makeReadableWebSocketStream(server, request.headers.get("sec-websocket-protocol") || "");
+  const wsReader = wsStream.getReader();
+  try {
+    const first = await wsReader.read();
+    if (first.done) { server.close(); return new Response(null, { status: 101, webSocket: client }); }
+    const firstBytes = new Uint8Array(first.value);
+    const h = parseVlessHeader(firstBytes, CONFIG.UUID);
+    if (h.hasError) { server.close(1011, h.message); return new Response(null, { status: 101, webSocket: client }); }
+
+    const socket = connect({ hostname: CONFIG.ISP.host, port: CONFIG.ISP.port });
+    await socket.opened;
+    const sWriter = socket.writable.getWriter();
+    const sReader = makeSocks5Reader(socket.readable.getReader());
+
+    await sWriter.write(buildSocks5Greeting());
+    const g = await sReader.readAtLeast(2);
+    if (!(g[0] === 0x05 && g[1] === 0x02)) throw new Error("socks5: method rejected");
+    await sWriter.write(buildSocks5Auth(CONFIG.ISP.user, CONFIG.ISP.pass));
+    if (!parseSocks5AuthReply(await sReader.readAtLeast(2)).ok) throw new Error("socks5: auth failed");
+    await sWriter.write(buildSocks5Connect(h.addressType, h.address, h.port));
+    if (!(await sReader.readConnectReply()).ok) throw new Error("socks5: connect failed");
+
+    server.send(new Uint8Array([h.version, 0]));                       // VLESS 响应头
+    const initial = firstBytes.slice(h.rawDataIndex);
+    if (initial.length) await sWriter.write(initial);
+    const carry = sReader.leftover();
+    if (carry.length) server.send(carry);                             // 极少见的早到目标数据
+    sWriter.releaseLock();
+
+    // 双向 pipe
+    socket.readable.pipeTo(new WritableStream({
+      write: c => server.send(c),
+      close: () => { try { server.close(); } catch {} },
+      abort: () => { try { server.close(); } catch {} },
+    })).catch(() => { try { server.close(); } catch {} });
+    (async () => {
+      const w = socket.writable.getWriter();
+      try {
+        for (;;) { const { value, done } = await wsReader.read(); if (done) break; await w.write(new Uint8Array(value)); }
+      } catch {} finally { try { await w.close(); } catch {} }
+    })();
+  } catch (e) {
+    server.close(1011, String(e));
+  }
+  return new Response(null, { status: 101, webSocket: client });
+}
+
+export default { async fetch() { return new Response("ok"); } }; // 占位，Task 6 替换
