@@ -1,5 +1,13 @@
-# CfIspProxy 优选 IP 列表（墙内脚本周更后 git push；worker /sub 拉取）
-# 格式：IP[:port][#备注]
-104.16.0.1#示例-请替换为你优选脚本产出的IP
-104.17.0.2
-104.18.0.3
+# CfIspProxy 优选 IP —— tools/preferred_ip/scan.py 生成，勿手改
+# 生成时间 2026-06-28 20:45:57，共 10 个
+# 格式 IP#COLO-RTTms-SPEEDmbps
+104.24.77.244#ORD-228ms-18.6mbps
+104.19.108.114#ORD-225ms-16.8mbps
+104.27.22.98#ORD-230ms-16.6mbps
+104.19.254.25#ORD-232ms-15.2mbps
+104.18.136.100#ORD-243ms-13.1mbps
+104.17.101.234#ORD-228ms-12.9mbps
+104.21.86.9#ORD-233ms-10.8mbps
+104.21.220.239#ORD-235ms-10.7mbps
+104.16.0.84#ORD-234ms-10.4mbps
+104.19.70.205#ORD-239ms-9.9mbps
